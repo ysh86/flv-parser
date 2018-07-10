@@ -14,3 +14,5 @@ include_directories("/usr/local/include" "${PROJECT_SOURCE_DIR}/deps")
 link_directories("/usr/local/lib")
 
 add_executable(flv_parser ${SOURCE_FILES})
+
+#set(CMAKE_C_FLAGS "-g -O0")

@@ -76,9 +76,18 @@ const char *avc_packet_types[] = {
 };
 
 static FILE *g_infile;
+static int g_v_count;
+static int g_a_count;
 
 void die(void) {
-    printf("Error!\n");
+    if (g_infile) {
+        fpos_t pos;
+        fgetpos(g_infile, &pos);
+        printf("Error at %lld!\n", pos);
+    } else {
+        printf("Error!\n");
+    }
+
     exit(-1);
 }
 
@@ -162,6 +171,10 @@ audio_tag_t *read_audio_tag(flv_tag_t *flv_tag) {
     uint8_t byte = 0;
     audio_tag_t *tag = NULL;
 
+    if (flv_tag->data_size == 0) {
+        return NULL;
+    }
+
     tag = malloc(sizeof(audio_tag_t));
     count = fread_1(&byte);
 
@@ -177,8 +190,28 @@ audio_tag_t *read_audio_tag(flv_tag_t *flv_tag) {
     printf("    Sound size: %u - %s\n", tag->sound_size, sound_sizes[tag->sound_size]);
     printf("    Sound type: %u - %s\n", tag->sound_type, sound_types[tag->sound_type]);
 
-    tag->data = malloc((size_t) flv_tag->data_size - 1);
-    count = fread(tag->data, 1, (size_t) flv_tag->data_size - 1, g_infile); // -1: audo data tag header
+    uint8_t aac_packet_type = 255; // dummy
+    if (tag->sound_format == 10) {
+        // AACPacketType
+        count += fread_1(&byte);
+        printf("      AAC packet type: %u - %s\n", byte, (byte == 0) ? "AAC sequence header" : "AAC raw");
+        aac_packet_type = byte;
+    }
+    tag->data = malloc((size_t) flv_tag->data_size - count);
+    count = fread(tag->data, 1, (size_t) flv_tag->data_size - count, g_infile);
+
+    if (aac_packet_type == 0 && count > 0) {
+        // The AudioSpecificConfig is defined in ISO 14496-3.
+        // Note that this is not the same as the contents of the esds box from an MP4/F4V file.
+        uint8_t *p = tag->data;
+        uint8_t *p_end = p + count;
+
+        printf("      AAC AudioSpecificConfig:");
+        while (p < p_end) {
+            printf(" 0x%x", *p++);
+        }
+        printf("\n");
+    }
 
     return tag;
 }
@@ -190,6 +223,10 @@ video_tag_t *read_video_tag(flv_tag_t *flv_tag) {
     size_t count = 0;
     uint8_t byte = 0;
     video_tag_t *tag = NULL;
+
+    if (flv_tag->data_size == 0) {
+        return NULL;
+    }
 
     tag = malloc(sizeof(video_tag_t));
 
@@ -223,14 +260,33 @@ avc_video_tag_t *read_avc_video_tag(video_tag_t *video_tag, flv_tag_t *flv_tag, 
     tag = malloc(sizeof(avc_video_tag_t));
 
     count = fread_1(&(tag->avc_packet_type));
-    //count += fread_4s(&(tag->composition_time));
-    count += fread_3(&(tag->composition_time));
-    count += fread_4(&(tag->nalu_len));
+    if (tag->avc_packet_type == 1) {
+        //count += fread_4s(&(tag->composition_time));
+        count += fread_3(&(tag->composition_time));
+    } else {
+        tag->composition_time = 0;
+    }
+
+    assert(video_tag->frame_type != 5); // not implemented!
+
+    // AVCVIDEOPACKET
+    size_t data_len = data_size - count;
+    if (tag->avc_packet_type == 0) {
+        // AVCDecoderConfigurationRecord
+        tag->nalu_len = 0;
+    } else if (tag->avc_packet_type == 1) {
+        // One or more NALUs (Full frames are required)
+        count += fread_4(&(tag->nalu_len));
+    } else {
+        // do nothing
+        tag->nalu_len = 0;
+    }
 
     printf("    AVC video tag:\n");
     printf("      AVC packet type: %u - %s\n", tag->avc_packet_type, avc_packet_types[tag->avc_packet_type]);
     printf("      AVC composition time: %i\n", tag->composition_time);
-    printf("      AVC nalu length: %i\n", tag->nalu_len);
+    printf("      AVC 1st nalu length: %i\n", tag->nalu_len);
+    printf("      AVC packet data length: %lu\n", data_len);
 
     tag->data = malloc((size_t) data_size - count);
     count = fread(tag->data, 1, (size_t) data_size - count, g_infile);
@@ -261,28 +317,22 @@ void flv_free_tag(flv_tag_t *tag) {
     video_tag_t *video_tag;
     avc_video_tag_t *avc_video_tag;
 
-    if (tag->tag_type == TAGTYPE_VIDEODATA) {
-        video_tag = (video_tag_t *) tag->data;
-        if (video_tag->codec_id == FLV_CODEC_ID_AVC) {
-            avc_video_tag = (avc_video_tag_t *) video_tag->data;
-            free(avc_video_tag->data);
+    if (tag->data) {
+        if (tag->tag_type == TAGTYPE_VIDEODATA) {
+            video_tag = (video_tag_t *) tag->data;
+            if (video_tag->codec_id == FLV_CODEC_ID_AVC) {
+                avc_video_tag = (avc_video_tag_t *) video_tag->data;
+                free(avc_video_tag->data);
+            }
             free(video_tag->data);
-            free(tag->data);
-            free(tag);
-        } else {
-            free(video_tag->data);
-            free(tag->data);
-            free(tag);
+        } else if (tag->tag_type == TAGTYPE_AUDIODATA) {
+            audio_tag = (audio_tag_t *) tag->data;
+            free(audio_tag->data);
         }
-    } else if (tag->tag_type == TAGTYPE_AUDIODATA) {
-        audio_tag = (audio_tag_t *) tag->data;
-        free(audio_tag->data);
-        free(tag->data);
-        free(tag);
-    } else {
-        free(tag->data);
-        free(tag);
     }
+
+    free(tag->data);
+    free(tag);
 }
 
 int flv_read_header(void) {
@@ -341,20 +391,24 @@ flv_tag_t *flv_read_tag(void) {
     printf("Tag type: %u - ", tag->tag_type);
     switch (tag->tag_type) {
         case TAGTYPE_AUDIODATA:
-            printf("Audio data\n");
+            printf("Audio data #%d\n", g_a_count++);
             print_general_tag_info(tag);
             tag->data = (void *) read_audio_tag(tag);
             break;
         case TAGTYPE_VIDEODATA:
-            printf("Video data\n");
+            printf("Video data #%d\n", g_v_count++);
             print_general_tag_info(tag);
             tag->data = (void *) read_video_tag(tag);
             break;
         case TAGTYPE_SCRIPTDATAOBJECT:
             printf("Script data object\n");
             print_general_tag_info(tag);
-            tag->data = malloc((size_t) tag->data_size);
-            count = fread(tag->data, 1, (size_t) tag->data_size, g_infile);
+            if (tag->data_size > 0) {
+                tag->data = malloc((size_t) tag->data_size);
+                count = fread(tag->data, 1, (size_t) tag->data_size, g_infile);
+            } else {
+                tag->data = NULL;
+            }
             break;
         default:
             printf("Unknown tag type!\n");
