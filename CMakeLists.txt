@@ -15,4 +15,5 @@ link_directories("/usr/local/lib")
 
 add_executable(flv_parser ${SOURCE_FILES})
 
+set(CMAKE_C_FLAGS "--std=c99 -Wall -Werror")
 #set(CMAKE_C_FLAGS "-g -O0")

@@ -371,22 +371,21 @@ flv_tag_t *flv_read_tag(void) {
     uint32_t prev_tag_size = 0;
     flv_tag_t *tag = NULL;
 
-    tag = malloc(sizeof(flv_tag_t));
-
     count = fread_4(&prev_tag_size);
+    printf("Prev tag size: %lu\n", (unsigned long) prev_tag_size);
+    printf("\n");
 
+    // Start reading next tag
+    tag = malloc(sizeof(flv_tag_t));
+    count = fread_1(&(tag->tag_type));
     if (feof(g_infile)) {
+        free(tag);
         return NULL;
     }
-    // Start reading next tag
-    count = fread_1(&(tag->tag_type));
     count = fread_3(&(tag->data_size));
     count = fread_3(&(tag->timestamp));
     count = fread_1(&(tag->timestamp_ext));
     count = fread_3(&(tag->stream_id));
-
-    printf("\n");
-    printf("Prev tag size: %lu\n", (unsigned long) prev_tag_size);
 
     printf("Tag type: %u - ", tag->tag_type);
     switch (tag->tag_type) {
@@ -412,6 +411,7 @@ flv_tag_t *flv_read_tag(void) {
             break;
         default:
             printf("Unknown tag type!\n");
+            free(tag);
             die();
     }
 

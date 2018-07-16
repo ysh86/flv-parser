@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
 
     flv_parser_run();
 
-    printf("\nFinished analyzing\n");
+    printf("Finished analyzing\n");
 
     return 0;
 }
