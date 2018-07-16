@@ -47,6 +47,10 @@ struct flv_tag {
 
 typedef struct flv_tag flv_tag_t;
 
+typedef struct scriptdata_tag {
+    uint8_t *data;
+} scriptdata_tag_t;
+
 typedef struct audio_tag {
     uint8_t sound_format; // 0 - raw, 1 - ADPCM, 2 - MP3, 4 - Nellymoser 16 KHz mono, 5 - Nellymoser 8 KHz mono, 10 - AAC, 11 - Speex
     uint8_t sound_rate; // 0 - 5.5 KHz, 1 - 11 KHz, 2 - 22 KHz, 3 - 44 KHz
@@ -73,6 +77,8 @@ int flv_read_header(void);
 flv_tag_t *flv_read_tag(void);
 
 void flv_print_header(flv_header_t *flv_header);
+
+scriptdata_tag_t *read_scriptdata_tag(flv_tag_t *flv_tag);
 
 audio_tag_t *read_audio_tag(flv_tag_t *flv_tag);
 
