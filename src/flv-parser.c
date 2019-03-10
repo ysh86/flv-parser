@@ -4,11 +4,13 @@
  * @date 2015/02/04
  */
 
+#define _POSIX_C_SOURCE 1
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include <time.h>
 #include <inttypes.h>
+#include <arpa/inet.h>
 
 #include "flv-parser.h"
 
@@ -116,7 +118,11 @@ void die(void) {
     if (g_infile) {
         fpos_t pos;
         fgetpos(g_infile, &pos);
-        printf("Error at %lld!\n", pos);
+        printf("Error at ");
+        for (size_t i = 0; i < sizeof(pos); i++) {
+            printf("%02X", ((unsigned char *)&pos)[i]);
+        }
+        printf("!\n");
     } else {
         printf("Error!\n");
     }
@@ -721,12 +727,11 @@ void flv_free_tag(flv_tag_t *tag) {
 }
 
 int flv_read_header(void) {
-    size_t count = 0;
     int i = 0;
     flv_header_t *flv_header = NULL;
 
     flv_header = malloc(sizeof(flv_header_t));
-    count = fread(flv_header, 1, sizeof(flv_header_t), g_infile);
+    fread(flv_header, 1, sizeof(flv_header_t), g_infile);
 
     // XXX strncmp
     for (i = 0; i < strlen(flv_signature); i++) {
@@ -752,25 +757,24 @@ void print_general_tag_info(flv_tag_t *tag) {
 }
 
 flv_tag_t *flv_read_tag(void) {
-    size_t count = 0;
     uint32_t prev_tag_size = 0;
     flv_tag_t *tag = NULL;
 
-    count = fread_4(&prev_tag_size);
+    fread_4(&prev_tag_size);
     printf("Prev tag size: %lu\n", (unsigned long) prev_tag_size);
     printf("\n");
 
     // Start reading next tag
     tag = malloc(sizeof(flv_tag_t));
-    count = fread_1(&(tag->tag_type));
+    fread_1(&(tag->tag_type));
     if (feof(g_infile)) {
         free(tag);
         return NULL;
     }
-    count = fread_3(&(tag->data_size));
-    count = fread_3(&(tag->timestamp));
-    count = fread_1(&(tag->timestamp_ext));
-    count = fread_3(&(tag->stream_id));
+    fread_3(&(tag->data_size));
+    fread_3(&(tag->timestamp));
+    fread_1(&(tag->timestamp_ext));
+    fread_3(&(tag->stream_id));
 
     printf("Tag type: %u - ", tag->tag_type);
     switch (tag->tag_type) {
